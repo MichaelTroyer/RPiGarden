@@ -53,7 +53,13 @@ def main(database, logfile, email_add, passx, wait=30):
             else:
                 min_temp, max_temp  = NIGHT_MIN_TEMP, NIGHT_MAX_TEMP
 
-            humidity, air_temperature = get_temp_and_humidity()
+            humidity1, air_temperature1 = get_temp_and_humidity(pin=17)
+            humidity2, air_temperature2 = get_temp_and_humidity(pin=27)
+
+            humidities = [h for h in (humidity1, humidity2) if 20 < h < 100]
+            humidity = sum(humidities) / len(humidities)
+            air_temperatures = [t for t in (air_temperature1, air_temperature2) if 10 < t < 50]
+            air_temperature = sum(air_temperatures) / len(air_temperatures)
 
             # Corrections
             humidity += HUMIDITY_CORRECTION
