@@ -8,7 +8,6 @@ Created 2020-10-26
 import datetime
 import os
 import sqlite3
-
 import pandas as pd
 
 
@@ -30,6 +29,7 @@ class Database():
                         DateTime date,
                         AirTemperature real,
                         Humidity real,
+                        LightsOn integer,
                         HeaterOn integer,
                         FanOn integer
                         );"""
@@ -39,11 +39,12 @@ class Database():
         with sqlite3.connect(self.db_path) as con:
             cur = con.cursor()
             cur.execute(
-                "INSERT INTO GardenData values (?,?,?,?,?)",
-                (                
+                "INSERT INTO GardenData values (?,?,?,?,?,?)",
+                (
                     data['DateTime'],
                     data['AirTemperature'],
                     data['Humidity'],
+                    data['LightsOn'],
                     data['HeaterOn'],
                     data['FanOn'],
                     )

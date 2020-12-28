@@ -2,6 +2,12 @@
 """
 Created on 2020-10-26
 @author: michael
+
+report.py creates the data summary, air temperature and humidity charts, pickles the df
+for the period of interest and emails it to the email within the yaml file using the
+email and password in the yaml file (emails to self).
+
+Schedule using cron.
 """
 
 
@@ -19,19 +25,11 @@ import gmail
 from database import Database
 
 
-_root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-REPORT_DIR = os.path.join(_root, 'Reports')
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+REPORT_DIR = os.path.join(ROOT, 'Reports')
 
 
-def email_report(email_add, passx, subject, body, atts=None):
-    mail = gmail.GMail(email_add, passx)
-    mail.connect()
-    msg = gmail.Message(subject=subject, to=email_add, text=body, attachments=atts)
-    mail.send(msg)
-    mail.close()
-
-
-def create_chart(column, title, y_axis):
+def create_line_chart(column, title, y_axis):
     chartFig, chartAx = plt.subplots()
     column.plot(kind='line', ax=chartAx, title=title)
     column.rolling(100).mean().plot(kind='line', ax=chartAx)
@@ -57,8 +55,8 @@ def create_summary(data):
         (data.Humidity, f'Humidity\n[{date_str}]', 'Percent Humidity'),
         ]
     for chart in charts_to_create:
-        finished_charts.append(create_chart(*chart))    
-    
+        finished_charts.append(create_line_chart(*chart))
+
     summary = f'{date_str}\n'
     for col in data.columns:
         summary += str(col) + '\n'
@@ -67,16 +65,22 @@ def create_summary(data):
     return summary, finished_charts
 
 
-def report(database, email_add, passx, start=None, end=None):
+def send_email(email_add, passx, subject, body, atts=None):
+    mail = gmail.GMail(email_add, passx)
+    mail.connect()
+    msg = gmail.Message(subject=subject, to=email_add, text=body, attachments=atts)
+    mail.send(msg)
+    mail.close()
+
+
+def email_report(database, email_add, passx, start=None, end=None):
     df = Database(database)
     data = df.get_data(start, end)
-    # Smooth df here..
-    
     df_pickle = os.path.join(REPORT_DIR, 'DataFrame.pkl')
     data.to_pickle(df_pickle)
     summary, charts = create_summary(data)
     attachments = charts + [df_pickle]
-    email_report(email_add, passx, f'Daily Report: {start}', summary, attachments)
+    send_email(email_add, passx, f'Daily Report: {start}', summary, attachments)
 
 
 if __name__ == '__main__':
@@ -92,9 +96,10 @@ if __name__ == '__main__':
 
     args = sys.argv
     end = datetime.datetime.now()
-    if not len(args) == 3:    
+    if not len(args) == 3:
         start = end - datetime.timedelta(days=1)
     else:
+        # e.g. python report.py days 3
         unit, period = args[1:3]
         start = end - datetime.timedelta(**{unit:int(period)})
 
