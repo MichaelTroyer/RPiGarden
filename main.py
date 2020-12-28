@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
+"""
+Created 2020-10-26
+@author: michael
+"""
+
 import os
 import logging
-import yaml
 
 from datetime import datetime
 from time import sleep
@@ -11,21 +15,23 @@ import board
 from database import Database
 from power import Outlet
 from report import email_report
-from sensors import get_temp_and_humidity
+from sensors import DHT_Sensor
 
 
+# Settings
 LIGHTS_ON = datetime.strptime('07:30', "%H:%M").time()
 LIGHTS_OFF = datetime.strptime('22:00', "%H:%M").time()
 
-DAY_MAX_TEMP = 85.0
-DAY_MIN_TEMP = 78.0
-NIGHT_MAX_TEMP = 80.0
+DAY_MAX_TEMP = 81.0
+DAY_MIN_TEMP = 76.0
+NIGHT_MAX_TEMP = 78.0
 NIGHT_MIN_TEMP = 73.0
 
-MAX_HUMIDITY = 65.0
+MAX_HUMIDITY = 60.0
+MIN_HUMIDITY = 40.0
 
-HUMIDITY_CORRECTION = -5  # Percent RH
-TEMPERATURE_CORRECTION = -1  # Degrees C
+HUMIDITY_CORRECTION = -4.0  # Percent RH
+TEMPERATURE_CORRECTION = 0.0  # Degrees C
 
 
 def main(database, logfile, email_add, passx, wait=30):
@@ -45,45 +51,43 @@ def main(database, logfile, email_add, passx, wait=30):
     heater = Outlet(pin=board.D26)
     fan = Outlet(pin=board.D24)
 
+    # Sensors
+    sensor_1 = DHT_Sensor(data_pin=27, circuit_pin=17)
+    sensor_2 = DHT_Sensor(data_pin=22, circuit_pin=23)
+    sensors = [sensor_1, sensor_2]
+
     try:       
         while True:
             dateTime = datetime.now()
             if LIGHTS_ON < dateTime.time() < LIGHTS_OFF:
-                min_temp, max_temp  = DAY_MIN_TEMP, DAY_MAX_TEMP
+                min_temp, max_temp = DAY_MIN_TEMP, DAY_MAX_TEMP
             else:
-                min_temp, max_temp  = NIGHT_MIN_TEMP, NIGHT_MAX_TEMP
+                min_temp, max_temp = NIGHT_MIN_TEMP, NIGHT_MAX_TEMP
 
-            humidity1, air_temperature1 = get_temp_and_humidity(pin=17)
-            humidity2, air_temperature2 = get_temp_and_humidity(pin=27)
-
-            humidities = [h for h in (humidity1, humidity2) if 20 < h < 100]
-            humidity = sum(humidities) / len(humidities)
-            air_temperatures = [t for t in (air_temperature1, air_temperature2) if 10 < t < 50]
-            air_temperature = sum(air_temperatures) / len(air_temperatures)
-
-            # Corrections
+            # Read sensors
+            ts, hs = [], []
+            for sensor in sensors:
+                try:
+                    h, t = sensor.read()
+                    if 0 < h < 100: hs.append(h)
+                    if 0 < t < 100: ts.append(t)
+                except:
+                    msg = f'Error getting data from Sensor on pin {sensor.data_pin}'
+                    print(msg); logging.error(msg)
+                sleep(1)
+            if not any(ts) or not any(hs): raise Exception('Total sensor failure..')
+            humidity = sum(hs) / len(hs)
+            air_temperature = sum(ts) / len(ts)
+            
+            # Apply corrections
             humidity += HUMIDITY_CORRECTION
             air_temperature += TEMPERATURE_CORRECTION
-               
-            air_temperature = (air_temperature * 1.8) + 32
-            print(f'Time: {dateTime.time()} | Temp: {air_temperature:.4}f | Humidity: {humidity:.4}%')
 
-            if air_temperature < min_temp:
-                if not heater.power.value:
-                    print('Temperature too low - Heater on..')
-                    heater.power_on()
-            elif air_temperature >= max_temp:
-                if heater.power.value:
-                    print('Temperature too high - Heater off..')
-                    heater.power_off()
-
-            if humidity >= MAX_HUMIDITY:
-                if not fan.power.value:
-                    print('Humidity too high - Fan on..')
-                    fan.power_on()
-            elif fan.power.value:
-                print('Fan off..')
-                fan.power_off()
+            # Adjust garden environment
+            if air_temperature < min_temp: heater.power_on()
+            elif air_temperature >= max_temp: heater.power_off()
+            if humidity >= MAX_HUMIDITY: fan.power_on()
+            elif humidity < MIN_HUMIDITY: fan.power_off()
 
             db.add_data({
                 'DateTime': dateTime,
@@ -92,21 +96,31 @@ def main(database, logfile, email_add, passx, wait=30):
                 'HeaterOn': heater.power.value,
                 'FanOn':fan.power.value,
                 })
+
+            print(
+                f'Time: {dateTime.time().strftime("%H:%M:%S")} | '\
+                f'Temp: {air_temperature:.3}f | '\
+                f'Humidity: {humidity:.3}% | '\
+                f'Heater: {"On" if heater.power.value else "Off":>3} | '\
+                f'Fan: {"On" if fan.power.value else "Off":>3}'
+                )
             sleep(wait)
 
     except Exception as e:
-        print(e)
-        err_msg = "---UNHANDLED EXCEPTION - PROGRAM EXIT---"
-        logging.error(err_msg, exc_info=True); print(err_msg)
+        err_msg = "---PiGarden: Fatal Program Error---"
+        logging.error(err_msg, exc_info=True)
+        print(err_msg, e)
         email_report(
-            email_add, passx,
-            'PiGarden Error!',
+            email_add, passx, err_msg,
             f'Unhandled Exception:\n[{e}]\nSee attached logfile for more details..',
             atts=[logfile],
             )
+    finally:
+        import RPi.GPIO; RPi.GPIO.cleanup()
 
 
 if __name__ == '__main__':
+    import yaml
 
     root = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
     database = os.path.join(root, 'Data', 'Garden.db')

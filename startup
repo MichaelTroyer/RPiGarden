@@ -1,2 +1,2 @@
 cd ~/PiGarden/Base
-screen -dm -s PiGarden && python controller.py
+screen -dm -s Main && python controller.py

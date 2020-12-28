@@ -1,3 +1,9 @@
+# -*- coding: utf-8 -*-
+"""
+Created 2020-10-26
+@author: michael
+"""
+
 import time
 
 import board
@@ -12,9 +18,11 @@ class Outlet():
         self.power.value = False
 
     def power_on(self):
-        self.power.value = True
+        if not self.power.value:
+            self.power.value = True
 
     def power_off(self):
-        self.power.value = False
+        if self.power.value:
+            self.power.value = False
 
     
